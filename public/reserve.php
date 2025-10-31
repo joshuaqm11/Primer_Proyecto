@@ -28,4 +28,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <p><a href="search.php">Volver a búsqueda</a></p>
 </body>
 </html>
-
