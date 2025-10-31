@@ -12,4 +12,3 @@ while($row = $r->fetch_assoc()){
   @mail($correo, "Aviso de reservas pendientes", "Tiene reservas pendientes en el sistema Rides.", "From: no-reply@rides.local");
   echo "Notificado chofer {$row['usuario_id']} - {$correo}\n";
 }
-
