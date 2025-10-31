@@ -1,7 +1,15 @@
 <?php
 require_once '../inc/funciones.php';
 if (!esPasajero()) { header("Location: ../public/index.php"); exit; }
+
+// Refrescar los datos del usuario en sesión (por si la foto se actualizó en BD)
+if (function_exists('refrescarUsuarioEnSesion')) {
+    refrescarUsuarioEnSesion();
+}
 $user = $_SESSION['user'];
+
+// Construir ruta de la foto (si existe)
+$fotoUrl = !empty($user['foto']) ? '../' . ltrim($user['foto'], '/') : null;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -18,9 +26,21 @@ $user = $_SESSION['user'];
   <div class="container">
     <a class="navbar-brand fw-bold" href="#">Rides - Pasajero</a>
     <div class="d-flex">
-      <span class="navbar-text text-white me-3">
-        <i class="bi bi-person-circle"></i> <?= htmlspecialchars($user['nombre']) ?>
+      <span class="navbar-text text-white me-3 d-flex align-items-center gap-2">
+        <?php if ($fotoUrl): ?>
+          <img src="<?= htmlspecialchars($fotoUrl) ?>" 
+               class="rounded-circle border border-light"
+               style="width:32px;height:32px;object-fit:cover;" alt="Foto">
+        <?php else: ?>
+          <i class="bi bi-person-circle fs-4"></i>
+        <?php endif; ?>
+        <?= htmlspecialchars($user['nombre']) ?>
       </span>
+
+        <!-- Botón Mi Perfil -->
+      <a href="../public/perfil.php" class="btn btn-outline-light btn-sm me-2">Mi Perfil</a>
+
+        <!-- Botón Cerrar Sesión -->  
       <a href="../public/logout.php" class="btn btn-outline-light btn-sm">Cerrar sesión</a>
     </div>
   </div>
@@ -66,4 +86,3 @@ $user = $_SESSION['user'];
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
