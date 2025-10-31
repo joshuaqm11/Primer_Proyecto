@@ -1,95 +1,201 @@
 <?php
 require_once '../inc/funciones.php';
 
-$origen = $_GET['origen'] ?? '';
-$destino = $_GET['destino'] ?? '';
-$order = $_GET['order'] ?? 'fecha_desc';
+// Permitir acceso público. Si hay sesión, úsala; si no, seguimos como invitado.
+$logged = isLoggedIn();
+$user   = $logged ? $_SESSION['user'] : null;
 
-$query = "SELECT r.*, u.nombre AS chofer FROM rides_data r 
-          JOIN usuarios u ON r.usuario_id = u.id 
-          WHERE r.fecha >= CURDATE()";
+global $mysqli;
+
+$lugar_salida   = trim($_GET['salida']  ?? '');
+$lugar_llegada  = trim($_GET['llegada'] ?? '');
+$fecha          = trim($_GET['fecha']   ?? '');
+$solo_disp      = isset($_GET['solo_disp']) ? (int)$_GET['solo_disp'] : 1; // 1 = solo con cupos (default)
+
+// Base: solo rides futuros
+$cond   = " WHERE r.fecha >= CURDATE() ";
 $params = [];
-$types = "";
+$types  = "";
 
-if ($origen !== '') {
-    $query .= " AND r.lugar_salida LIKE ?";
-    $params[] = "%$origen%";
-    $types .= "s";
-}
-if ($destino !== '') {
-    $query .= " AND r.lugar_llegada LIKE ?";
-    $params[] = "%$destino%";
-    $types .= "s";
+// Si está logueado, excluir rides del propio usuario
+if ($logged) {
+  $cond    .= " AND r.usuario_id <> ? ";
+  $params[] = $user['id'];
+  $types   .= "i";
 }
 
-$query .= ($order === 'fecha_asc') 
-  ? " ORDER BY r.fecha ASC, r.hora ASC" 
-  : " ORDER BY r.fecha DESC, r.hora DESC";
+// Filtros opcionales
+if ($lugar_salida !== "") {
+  $cond    .= " AND r.lugar_salida LIKE CONCAT('%', ?, '%') ";
+  $params[] = $lugar_salida; 
+  $types   .= "s";
+}
+if ($lugar_llegada !== "") {
+  $cond    .= " AND r.lugar_llegada LIKE CONCAT('%', ?, '%') ";
+  $params[] = $lugar_llegada; 
+  $types   .= "s";
+}
+if ($fecha !== "") {
+  $cond    .= " AND r.fecha = ? ";
+  $params[] = $fecha; 
+  $types   .= "s";
+}
 
-$stmt = $mysqli->prepare($query);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
+// Solo con espacios disponibles (opcional)
+if ($solo_disp === 1) {
+  $cond .= " AND r.espacios > 0 ";
+}
+
+$sql = "SELECT r.*, 
+               u.nombre  AS chofer_nombre, 
+               u.apellido AS chofer_apellido,
+               v.placa, v.marca, v.modelo, v.color
+        FROM rides_data r
+        JOIN usuarios u ON u.id = r.usuario_id
+   LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
+        $cond
+    ORDER BY r.fecha ASC, r.hora ASC";
+
+$stmt = $mysqli->prepare($sql);
+if ($types !== "") {
+  $stmt->bind_param($types, ...$params);
 }
 $stmt->execute();
-$result = $stmt->get_result();
+$res = $stmt->get_result();
+
+// Para navbar (foto si hay sesión y foto)
+$fotoUrl = ($logged && !empty($user['foto'])) ? '../'.ltrim($user['foto'],'/') : null;
 ?>
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<title>Buscar Rides Disponibles</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta charset="utf-8">
+  <title>Buscar Rides</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-
-<div class="container py-5">
-  <div class="card shadow-lg border-0 rounded-4">
-    <div class="card-header bg-primary text-white text-center py-3">
-      <h3 class="mb-0">🚗 Buscar Rides Disponibles</h3>
-    </div>
-    <div class="card-body">
-      <form method="get" class="row g-3 mb-4">
-        <div class="col-md-4">
-          <input name="origen" class="form-control" placeholder="Lugar de salida" value="<?= htmlspecialchars($origen) ?>">
-        </div>
-        <div class="col-md-4">
-          <input name="destino" class="form-control" placeholder="Lugar de llegada" value="<?= htmlspecialchars($destino) ?>">
-        </div>
-        <div class="col-md-3">
-          <select name="order" class="form-select">
-            <option value="fecha_desc" <?= ($order === 'fecha_desc' ? 'selected' : '') ?>>Más recientes</option>
-            <option value="fecha_asc" <?= ($order === 'fecha_asc' ? 'selected' : '') ?>>Más antiguos</option>
-          </select>
-        </div>
-        <div class="col-md-1 text-end">
-          <button class="btn btn-primary w-100">Buscar</button>
-        </div>
-      </form>
-
-      <?php if ($result->num_rows > 0): ?>
-        <?php while($r = $result->fetch_assoc()): ?>
-          <div class="card mb-3 border-0 shadow-sm">
-            <div class="card-body">
-              <h5 class="card-title text-primary"><?= htmlspecialchars($r['lugar_salida']) ?> → <?= htmlspecialchars($r['lugar_llegada']) ?></h5>
-              <p class="card-text mb-1">
-                <strong>Fecha:</strong> <?= $r['fecha'] ?> | <strong>Hora:</strong> <?= $r['hora'] ?><br>
-                <strong>Costo:</strong> $<?= $r['costo'] ?> | <strong>Espacios:</strong> <?= $r['espacios'] ?><br>
-                <strong>Chofer:</strong> <?= htmlspecialchars($r['chofer']) ?>
-              </p>
-            </div>
-          </div>
-        <?php endwhile; ?>
+<nav class="navbar navbar-expand-lg navbar-dark bg-success">
+  <div class="container">
+    <a class="navbar-brand fw-bold" href="#">Rides - Búsqueda</a>
+    <div class="d-flex align-items-center gap-2">
+      <?php if ($logged): ?>
+        <span class="navbar-text text-white me-2 d-flex align-items-center gap-2">
+          <?php if ($fotoUrl): ?>
+            <img src="<?= htmlspecialchars($fotoUrl) ?>" class="rounded-circle border border-light"
+                 style="width:32px;height:32px;object-fit:cover;" alt="Foto">
+          <?php else: ?>
+            <i class="bi bi-person-circle fs-4"></i>
+          <?php endif; ?>
+          <?= htmlspecialchars($user['nombre'] ?? '') ?>
+        </span>
+        <a href="../public/logout.php" class="btn btn-outline-light btn-sm">Cerrar sesión</a>
       <?php else: ?>
-        <div class="alert alert-warning text-center">No se encontraron rides disponibles.</div>
+        <a href="./index.php" class="btn btn-outline-light btn-sm">Iniciar sesión</a>
+        <a href="./registro_pasajero.php" class="btn btn-light btn-sm ms-2">Registrarse</a>
       <?php endif; ?>
-
-      <div class="text-center mt-4">
-        <a href="index.php" class="btn btn-outline-secondary">⬅️ Volver al inicio</a>
-      </div>
     </div>
   </div>
-</div>
+</nav>
 
+<div class="container py-4">
+  <h2 class="mb-3">Buscar Rides</h2>
+
+  <form class="row g-3 mb-4" method="get">
+    <div class="col-md-4">
+      <label class="form-label">Lugar de salida</label>
+      <input type="text" class="form-control" name="salida" value="<?= htmlspecialchars($lugar_salida) ?>">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Lugar de llegada</label>
+      <input type="text" class="form-control" name="llegada" value="<?= htmlspecialchars($lugar_llegada) ?>">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Fecha</label>
+      <input type="date" class="form-control" name="fecha" value="<?= htmlspecialchars($fecha) ?>">
+    </div>
+    <div class="col-md-8 d-flex align-items-end">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="solo_disp" name="solo_disp" value="1" <?= $solo_disp ? 'checked' : '' ?>>
+        <label class="form-check-label" for="solo_disp">
+          Solo con espacios disponibles
+        </label>
+      </div>
+    </div>
+    <div class="col-md-4 d-grid">
+      <label class="form-label d-none d-md-block">&nbsp;</label>
+      <button class="btn btn-success"><i class="bi bi-search"></i> Buscar</button>
+    </div>
+  </form>
+
+  <div class="card">
+    <div class="card-header fw-bold">Resultados</div>
+    <div class="card-body">
+      <?php if ($res && $res->num_rows): ?>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>Ride</th>
+              <th>Trayecto</th>
+              <th>Fecha</th>
+              <th>Hora</th>
+              <th>Costo</th>
+              <th>Espacios</th>
+              <th>Vehículo</th>
+              <th>Chofer</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php while($ride = $res->fetch_assoc()): ?>
+            <tr>
+              <td><?= htmlspecialchars($ride['nombre']) ?></td>
+              <td><?= htmlspecialchars($ride['lugar_salida'].' → '.$ride['lugar_llegada']) ?></td>
+              <td><?= htmlspecialchars($ride['fecha']) ?></td>
+              <td><?= htmlspecialchars(substr($ride['hora'],0,5)) ?></td>
+              <td>₡ <?= number_format((float)$ride['costo'],2) ?></td>
+              <td><?= (int)$ride['espacios'] ?></td>
+              <td><?= $ride['placa'] ? htmlspecialchars($ride['placa'].' ('.$ride['marca'].' '.$ride['modelo'].')') : '—' ?></td>
+              <td><?= htmlspecialchars(($ride['chofer_nombre'] ?? '').' '.($ride['chofer_apellido'] ?? '')) ?></td>
+              <td>
+                <?php if (esPasajero()): ?>
+                  <?php if ((int)$ride['espacios'] > 0): ?>
+                    <!-- Reservar (solo pasajeros logueados) -->
+                    <form method="post" action="../pasajero/reservas.php" class="d-flex gap-2">
+                      <input type="hidden" name="crear_reserva" value="1">
+                      <input type="hidden" name="ride_id" value="<?= (int)$ride['id'] ?>">
+                      <input type="number" name="cantidad" min="1" max="<?= (int)$ride['espacios'] ?>" value="1"
+                             class="form-control form-control-sm" style="width:90px">
+                      <button class="btn btn-sm btn-primary">Reservar</button>
+                    </form>
+                  <?php else: ?>
+                    <span class="badge bg-danger">Sin espacios</span>
+                  <?php endif; ?>
+                <?php else: ?>
+                  <a class="btn btn-sm btn-outline-primary" href="./index.php">Inicia sesión para reservar</a>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endwhile; ?>
+          </tbody>
+        </table>
+      </div>
+      <?php else: ?>
+        <div class="alert alert-secondary">No se encontraron rides con esos criterios.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <div class="mt-3 d-flex gap-2">
+    <?php if ($logged): ?>
+      <a class="btn btn-outline-secondary" href="../pasajero/dashboard.php">⬅️ Volver al Panel</a>
+    <?php else: ?>
+      <a class="btn btn-outline-secondary" href="./index.php">⬅️ Volver al Login</a>
+    <?php endif; ?>
+    <a class="btn btn-outline-primary" href="./search.php">Limpiar filtros</a>
+  </div>
+</div>
 </body>
 </html>
-
