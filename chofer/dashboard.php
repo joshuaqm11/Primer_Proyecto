@@ -18,9 +18,23 @@ $user = $_SESSION['user'];
   <div class="container">
     <a class="navbar-brand fw-bold" href="#">Rides - Chofer</a>
     <div class="d-flex">
-      <span class="navbar-text text-white me-3">
-        <i class="bi bi-person-circle"></i> <?= htmlspecialchars($user['nombre']) ?>
+      <span class="navbar-text text-white me-3 d-flex align-items-center gap-2">
+  <?php if (!empty($user['foto'])): ?>
+    <img src="../<?= htmlspecialchars($user['foto']) ?>" 
+         alt="Foto" 
+         class="rounded-circle border border-light" 
+         style="width:32px;height:32px;object-fit:cover;">
+  <?php else: ?>
+    <i class="bi bi-person-circle fs-4"></i>
+  <?php endif; ?>
+  <?= htmlspecialchars($user['nombre']) ?>
+</span>
       </span>
+
+        <!-- Botón Mi Perfil -->
+      <a href="../public/perfil.php" class="btn btn-outline-light btn-sm me-2">Mi Perfil</a>
+
+        <!-- Botón Cerrar Sesión -->
       <a href="../public/logout.php" class="btn btn-outline-light btn-sm">Cerrar sesión</a>
     </div>
   </div>
@@ -66,15 +80,9 @@ $user = $_SESSION['user'];
 
   </div>
 
-  <hr class="my-5">
-  <div class="text-center">
-    <a href="../public/search.php" class="btn btn-outline-secondary">
-      <i class="bi bi-search"></i> Ver Rides Públicos
-    </a>
-  </div>
+  
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
