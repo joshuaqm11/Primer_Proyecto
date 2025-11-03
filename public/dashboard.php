@@ -1,3 +1,4 @@
+// Realizado por Joshua Quesada y Fabio Oconitrillo
 <?php
 require_once '../inc/funciones.php'; // ruta correcta desde public/dashboard.php
 
@@ -14,28 +15,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Crear nuevo admin
     if (isset($_POST['crear_admin'])) {
-        $nombre = trim($_POST['nombre']);
-        $apellido = trim($_POST['apellido']);
-        $correo = trim($_POST['correo']);
-        $password = $_POST['password'];
-        $hash = password_hash($password, PASSWORD_BCRYPT);
+        $nombre = trim($_POST['nombre']);     // Nombre del nuevo administrador
+        $apellido = trim($_POST['apellido']); // Apellido del nuevo administrador
+        $correo = trim($_POST['correo']);     // Correo (login)
+        $password = $_POST['password'];       // Contraseña en texto plano
+        $hash = password_hash($password, PASSWORD_BCRYPT); // Hash seguro (bcrypt)
 
+        // Inserta al nuevo admin con estado activo
         $stmt = $mysqli->prepare("INSERT INTO usuarios (nombre, apellido, correo, password_hash, tipo, estado) VALUES (?, ?, ?, ?, 'admin', 'activo')");
         $stmt->bind_param("ssss", $nombre, $apellido, $correo, $hash);
         $stmt->execute();
     }
 
-    // Cambiar estado de usuario
+    // Cambiar estado de usuario (activo/pendiente/inactivo)
     if (isset($_POST['cambiar_estado'])) {
-        $user_id = $_POST['user_id'];
-        $nuevo_estado = $_POST['estado'];
+        $user_id = $_POST['user_id'];       // ID del usuario objetivo
+        $nuevo_estado = $_POST['estado'];   // Nuevo estado seleccionado
         $stmt = $mysqli->prepare("UPDATE usuarios SET estado = ? WHERE id = ?");
         $stmt->bind_param("si", $nuevo_estado, $user_id);
         $stmt->execute();
     }
 }
 
-// Obtener lista de usuarios
+// Obtener lista de usuarios para el tablero
 $result = $mysqli->query("SELECT id, nombre, apellido, correo, tipo, estado FROM usuarios ORDER BY tipo, nombre");
 $usuarios = $result->fetch_all(MYSQLI_ASSOC);
 ?>
@@ -52,11 +54,13 @@ $usuarios = $result->fetch_all(MYSQLI_ASSOC);
 <div class="container mt-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Panel de Administración</h1>
+        <!-- Acción rápida para cerrar sesión -->
         <a href="logout.php" class="btn btn-danger">Cerrar sesión</a>
     </div>
 
     <h3>Usuarios Registrados</h3>
     <div class="table-responsive">
+        <!-- Tabla de usuarios con acciones para cambiar estado -->
         <table class="table table-bordered table-striped">
             <thead class="table-light">
                 <tr>
@@ -77,6 +81,7 @@ $usuarios = $result->fetch_all(MYSQLI_ASSOC);
                     <td><?= $u['tipo'] ?></td>
                     <td><?= $u['estado'] ?></td>
                     <td>
+                        <!-- Form inline para actualizar el estado del usuario -->
                         <form method="post" class="d-flex gap-2">
                             <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                             <select name="estado" class="form-select form-select-sm">
@@ -93,6 +98,7 @@ $usuarios = $result->fetch_all(MYSQLI_ASSOC);
         </table>
     </div>
 
+    <!-- Form para crear un nuevo administrador -->
     <h3 class="mt-5">Crear Nuevo Administrador</h3>
     <form method="post" class="row g-3">
         <div class="col-md-3">
