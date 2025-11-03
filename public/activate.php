@@ -1,7 +1,8 @@
+// Realizado por Joshua Quesada y Fabio Oconitrillo
 <?php
-require_once '../inc/funciones.php';
+require_once '../inc/funciones.php'; // Carga helpers y conexión
 
-$token = trim($_GET['token'] ?? '');
+$token = trim($_GET['token'] ?? ''); // Token recibido por URL desde el correo de activación
 
 ?>
 <!doctype html>
@@ -10,6 +11,7 @@ $token = trim($_GET['token'] ?? '');
   <meta charset="utf-8">
   <title>Activación de cuenta</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Estilos Bootstrap CDN -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
@@ -20,12 +22,13 @@ $token = trim($_GET['token'] ?? '');
         <div class="card-header fw-bold">Activación de cuenta</div>
         <div class="card-body">
 <?php
+// Validación rápida: token presente
 if ($token === '') {
   echo '<div class="alert alert-danger">Token vacío o inválido.</div>';
 } else {
   global $mysqli;
 
-  // Buscar el token
+  // Busca el token en la tabla de activaciones y trae datos del usuario
   $stmt = $mysqli->prepare("
     SELECT at.usuario_id, u.estado, u.correo
       FROM activation_tokens at
@@ -40,24 +43,27 @@ if ($token === '') {
   $stmt->close();
 
   if (!$row) {
+    // Token inexistente o ya consumido
     echo '<div class="alert alert-danger">El token no existe o ya fue utilizado.</div>';
   } else {
-    // Activar al usuario si no está activo
+    // Si el usuario aún no está activo, lo activa
     if ($row['estado'] !== 'activo') {
       $uid = (int)$row['usuario_id'];
 
+      // Actualiza estado del usuario a 'activo'
       $stmt = $mysqli->prepare("UPDATE usuarios SET estado='activo' WHERE id=?");
       $stmt->bind_param("i", $uid);
       $stmt->execute();
       $stmt->close();
     }
 
-    // Consumir el token
+    // Consume el token (lo elimina para que no pueda reutilizarse)
     $stmt = $mysqli->prepare("DELETE FROM activation_tokens WHERE token=?");
     $stmt->bind_param("s", $token);
     $stmt->execute();
     $stmt->close();
 
+    // Mensaje final y acceso al login
     echo '<div class="alert alert-success">
             ¡Tu cuenta ha sido activada correctamente! Ya puedes iniciar sesión.
           </div>';
