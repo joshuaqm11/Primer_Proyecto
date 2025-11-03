@@ -1,14 +1,20 @@
+// Realizado por Joshua Quesada y Fabio Oconitrillo
 <?php
-require_once '../inc/funciones.php';
+require_once '../inc/funciones.php'; // Carga helpers
+
+// Solo permite acceso con sesión activa
 if (!isLoggedIn()) { header("Location: ./index.php"); exit; }
 
-// refrescar datos en sesión
+// Refresca los datos del usuario en sesión
 refrescarUsuarioEnSesion();
 $user = $_SESSION['user'];
 
 $msg = $err = null;
 
-// Procesar actualización de datos
+/* =========================================================
+   Guardado de datos personales
+   - Actualización de campos básicos y foto de perfil
+   ========================================================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'perfil') {
     $nombre    = trim($_POST['nombre'] ?? '');
     $apellido  = trim($_POST['apellido'] ?? '');
@@ -17,38 +23,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'perfil'
     $correo    = trim($_POST['correo'] ?? '');
     $telefono  = trim($_POST['telefono'] ?? '');
 
-    // subir foto si viene
+    // Subida de foto si fue enviada
     $rutaFoto = null;
     if (!empty($_FILES['foto']['name']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
-        $rutaFoto = subirFotoUsuario($_FILES['foto']); // guarda en uploads/fotos_usuarios/...
+        $rutaFoto = subirFotoUsuario($_FILES['foto']); // Devuelve ruta relativa (uploads/fotos_usuarios/...)
     }
 
+    // Actualiza perfil en BD y refleja en sesión si fue exitoso
     [$ok, $msj] = actualizarPerfilUsuario($user['id'], $nombre, $apellido, $cedula, $fecha_nac, $correo, $telefono, $rutaFoto);
     if ($ok) {
-        refrescarUsuarioEnSesion();
+        refrescarUsuarioEnSesion();  // Vuelve a cargar datos del usuario
         $user = $_SESSION['user'];
-        $msg = $msj;
+        $msg = $msj;                 // Mensaje de éxito
     } else {
-        $err = $msj;
+        $err = $msj;                 // Mensaje de error
     }
 }
 
-// Procesar cambio de contraseña
+/* =========================================================
+   Cambio de contraseña (formulario "password")
+   - Verifica confirmación y longitud mínima
+   - Usa verificación de contraseña actual y hash seguro
+   ========================================================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'password') {
     $passActual = $_POST['pass_actual'] ?? '';
     $passNueva  = $_POST['pass_nueva'] ?? '';
     $passConf   = $_POST['pass_conf']   ?? '';
 
+    // Validaciones básicas en servidor
     if ($passNueva !== $passConf) {
         $err = "Las contraseñas nuevas no coinciden.";
     } elseif (strlen($passNueva) < 4) {
         $err = "La nueva contraseña debe tener al menos 4 caracteres.";
     } else {
+        // Intenta actualizar password en BD
         [$ok, $msj] = cambiarPasswordUsuario($user['id'], $passActual, $passNueva);
         if ($ok) $msg = $msj; else $err = $msj;
     }
 }
 
+// Construye URL relativa a la foto actual
 $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
 ?>
 <!doctype html>
@@ -57,11 +71,13 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
   <meta charset="utf-8">
   <title>Mi Perfil</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Bootstrap + Icons para estilos -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 
+<!-- Barra superior con nombre/foto de usuario y botón de logout -->
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container">
     <a class="navbar-brand fw-bold" href="#">Rides - Perfil</a>
@@ -82,10 +98,12 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
 <div class="container py-4">
   <h2 class="mb-3">Mi Perfil</h2>
 
+  <!-- Mensajes de resultado (éxito / error) -->
   <?php if ($msg): ?><div class="alert alert-success"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
   <?php if ($err): ?><div class="alert alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
   <div class="row g-4">
+    <!-- =================== Formulario de datos personales =================== -->
     <div class="col-lg-7">
       <div class="card shadow-sm">
         <div class="card-header fw-bold">Datos personales</div>
@@ -94,6 +112,7 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
             <input type="hidden" name="form" value="perfil">
 
             <div class="row g-3">
+              <!-- Campos básicos del perfil -->
               <div class="col-md-6">
                 <label class="form-label">Nombre</label>
                 <input name="nombre" class="form-control" value="<?= htmlspecialchars($user['nombre'] ?? '') ?>" required>
@@ -121,6 +140,7 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
                 <input name="telefono" class="form-control" value="<?= htmlspecialchars($user['telefono'] ?? '') ?>">
               </div>
 
+              <!-- Subida de foto -->
               <div class="col-12">
                 <label class="form-label">Foto de perfil</label>
                 <input type="file" name="foto" class="form-control" accept=".jpg,.jpeg,.png,.webp,.gif">
@@ -128,8 +148,10 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
               </div>
             </div>
 
+            <!-- Acciones del formulario -->
             <div class="mt-3 d-flex gap-2">
               <button class="btn btn-primary">Guardar cambios</button>
+              <!-- Enlace dinámico a panel según rol actual -->
               <a class="btn btn-outline-secondary" href="<?= (esChofer() ? '../chofer/dashboard.php' : (esPasajero() ? '../pasajero/dashboard.php' : './index.php')) ?>">Volver</a>
             </div>
           </form>
@@ -137,6 +159,7 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
       </div>
     </div>
 
+    <!-- =================== Cambio de contraseña + vista de foto =================== -->
     <div class="col-lg-5">
       <div class="card shadow-sm">
         <div class="card-header fw-bold">Cambiar contraseña</div>
@@ -160,6 +183,7 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
         </div>
       </div>
 
+      <!-- Muestra de la foto actual en tamaño mayor -->
       <div class="card shadow-sm mt-3">
         <div class="card-header fw-bold">Foto actual</div>
         <div class="card-body text-center">
@@ -176,4 +200,3 @@ $fotoUrl = !empty($user['foto']) ? '../'.ltrim($user['foto'],'/') : null;
 </div>
 </body>
 </html>
-
