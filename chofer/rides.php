@@ -1,23 +1,29 @@
+// Realizado por Joshua Quesada y Fabio Oconitrillo
 <?php
-require_once '../inc/funciones.php';
-if (!esChofer()) { header("Location: ../public/index.php"); exit; }
-global $mysqli;
+require_once '../inc/funciones.php'; // Helpers globales
+if (!esChofer()) { header("Location: ../public/index.php"); exit; } // Guardia: solo chofer
+global $mysqli; // Conexión global
 
-$user = $_SESSION['user'];
-$msg = $err = null;
+$user = $_SESSION['user']; // Usuario autenticado
+$msg = $err = null;        
 
-// (opcional) fija zona horaria del proyecto
+// Fija zona horaria del proyecto si no está definida en php.ini
 if (!ini_get('date.timezone')) {
     date_default_timezone_set('America/Costa_Rica');
 }
 
+// Catálogo de vehículos del chofer para selects de creación/edición
 $vehiculos = listarVehiculosUsuario($user['id']);
 
-/** CREATE / UPDATE / DELETE */
+/** ================================
+ *  CREATE / UPDATE / DELETE (CRUD)
+ *  Manejo de formulario por método POST
+ *  ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $accion = $_POST['accion'] ?? 'crear';
+    $accion = $_POST['accion'] ?? 'crear'; // crear|editar|eliminar
 
     if ($accion === 'crear') {
+        // --- Lectura y saneo básico de inputs ---
         $vehiculoId = ($_POST['vehiculo_id'] === '' ? null : intval($_POST['vehiculo_id']));
         $nombre = trim($_POST['nombre']);
         $salida = trim($_POST['lugar_salida']);
@@ -27,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $costo = floatval($_POST['costo']);
         $espacios = intval($_POST['espacios']);
 
-        // ✅ Validar fecha/hora futura
+        // ✅ Validación de fecha/hora futura (no permitir rides en pasado)
         $dt = DateTime::createFromFormat('Y-m-d H:i', "$fecha $hora");
         $ahora = new DateTime();
         if (!$dt) {
@@ -36,16 +42,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $err = "No puedes crear un ride en una fecha u hora pasada.";
         }
 
-        // ✅ Validar capacidad efectiva (capacidad - 1)
+        // ✅ Validación de capacidad efectiva (capacidad del vehículo - 1 para el conductor)
         if (!$err) {
             if (empty($vehiculoId)) {
                 $err = "Debes seleccionar un vehículo para crear el ride.";
             } else {
-                $cap = capacidadVehiculo($vehiculoId, $user['id']); // capacidad total del vehículo
+                $cap = capacidadVehiculo($vehiculoId, $user['id']); // Consulta capacidad y pertenencia
                 if ($cap === null) {
                     $err = "Vehículo inválido o no pertenece al usuario.";
                 } else {
-                    $maxEspacios = max(0, (int)$cap - 1); // una plaza es del conductor
+                    $maxEspacios = max(0, (int)$cap - 1); // Reserva 1 plaza para el conductor
                     if ($maxEspacios < 1) {
                         $err = "El vehículo no tiene plazas disponibles para pasajeros.";
                     } elseif ($espacios > $maxEspacios) {
@@ -56,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // Creación del ride si todas las validaciones pasan
         if (!$err) {
             if (crearRide($user['id'], $vehiculoId, $nombre, $salida, $llegada, $fecha, $hora, $costo, $espacios)) {
                 $msg = "✅ Ride creado";
@@ -66,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($accion === 'editar') {
+        // --- Lectura y saneo básico de inputs para edición ---
         $id = intval($_POST['id']);
         $vehiculoId = ($_POST['vehiculo_id'] === '' ? null : intval($_POST['vehiculo_id']));
         $nombre = trim($_POST['nombre']);
@@ -76,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $costo = floatval($_POST['costo']);
         $espacios = intval($_POST['espacios']);
 
-        // ✅ Validar fecha/hora futura
+        // ✅ Validación de fecha/hora futura también en edición
         $dt = DateTime::createFromFormat('Y-m-d H:i', "$fecha $hora");
         $ahora = new DateTime();
         if (!$dt) {
@@ -85,12 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $err = "No puedes guardar un ride con fecha u hora pasada. ";
         }
 
-        // ✅ Validar capacidad efectiva (capacidad - 1)
+        // ✅ Validación de capacidad efectiva (capacidad - 1)
         if (!$err) {
             if (empty($vehiculoId)) {
                 $err = "Debes seleccionar un vehículo para editar el ride.";
             } else {
-                $cap = capacidadVehiculo($vehiculoId, $user['id']);
+                $cap = capacidadVehiculo($vehiculoId, $user['id']); // Chequea pertenencia/capacidad
                 if ($cap === null) {
                     $err = "Vehículo inválido o no pertenece al usuario.";
                 } else {
@@ -105,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // Persistencia de cambios si pasa validación
         if (!$err) {
             if (actualizarRide($id, $user['id'], $vehiculoId, $nombre, $salida, $llegada, $fecha, $hora, $costo, $espacios)) {
                 $msg = "✅ Ride actualizado";
@@ -115,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($accion === 'eliminar') {
+        // Eliminación lógica/física del ride propio
         $id = intval($_POST['id']);
         if (eliminarRide($id, $user['id'])) {
             $msg = "🗑️ Ride eliminado";
@@ -124,6 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Listado de rides existentes del chofer para la tabla inferior
 $lista = listarRidesUsuario($user['id']);
 ?>
 <!doctype html>
@@ -131,15 +142,18 @@ $lista = listarRidesUsuario($user['id']);
 <head>
   <meta charset="utf-8">
   <title>Mis Rides</title>
+  <!-- Bootstrap para estilos y componentes -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 <div class="container py-4">
   <h1 class="mb-3">🚌 Mis Rides</h1>
 
+  <!-- Feedback de acciones (éxito/error) -->
   <?php if ($msg): ?><div class="alert alert-success"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
   <?php if ($err): ?><div class="alert alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
+  <!-- ================== FORMULARIO DE CREACIÓN ================== -->
   <div class="card mb-4">
     <div class="card-header fw-bold">Crear Ride</div>
     <div class="card-body">
@@ -180,7 +194,7 @@ $lista = listarRidesUsuario($user['id']);
             <option value="">— Selecciona un vehículo —</option>
             <?php
             if ($vehiculos) {
-              $vehiculos->data_seek(0);
+              $vehiculos->data_seek(0); // Reinicia puntero por si ya fue iterado
               while($v = $vehiculos->fetch_assoc()): ?>
                 <option value="<?= (int)$v['id'] ?>">
                   <?= htmlspecialchars($v['placa'].' - '.$v['marca'].' '.$v['modelo'].' ('.$v['color'].')') ?>
@@ -197,6 +211,7 @@ $lista = listarRidesUsuario($user['id']);
     </div>
   </div>
 
+  <!-- ================== LISTADO Y EDICIÓN EN LÍNEA ================== -->
   <div class="card">
     <div class="card-header fw-bold">Listado</div>
     <div class="card-body">
@@ -224,6 +239,7 @@ $lista = listarRidesUsuario($user['id']);
               </td>
               <td class="d-flex gap-2">
                 <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#edit<?= $r['id'] ?>">Editar</button>
+                <!-- Eliminación con confirmación del navegador -->
                 <form method="post" onsubmit="return confirm('¿Eliminar ride?');" class="d-inline">
                   <input type="hidden" name="accion" value="eliminar">
                   <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
@@ -231,6 +247,7 @@ $lista = listarRidesUsuario($user['id']);
                 </form>
               </td>
             </tr>
+            <!-- Formulario de edición expandible -->
             <tr class="collapse" id="edit<?= $r['id'] ?>">
               <td colspan="8">
                 <form method="post" class="row g-3">
@@ -270,7 +287,7 @@ $lista = listarRidesUsuario($user['id']);
                       <option value="">— Selecciona un vehículo —</option>
                       <?php
                       if ($vehiculos) {
-                        $vehiculos->data_seek(0);
+                        $vehiculos->data_seek(0); // Reposiciona el puntero para reutilizar el resultset
                         while($v = $vehiculos->fetch_assoc()):
                           $sel = ((int)($r['vehiculo_id'] ?? 0) === (int)$v['id']) ? 'selected' : '';
                       ?>
@@ -291,9 +308,11 @@ $lista = listarRidesUsuario($user['id']);
         </table>
       </div>
       <?php else: ?>
+        <!-- Mensaje cuando no hay rides creados -->
         <div class="alert alert-warning">Aún no has creado rides.</div>
       <?php endif; ?>
 
+      <!-- Enlace de retorno al panel del chofer -->
       <div class="mt-3">
         <a class="btn btn-outline-secondary" href="../chofer/dashboard.php">⬅️ Volver</a>
       </div>
@@ -301,6 +320,7 @@ $lista = listarRidesUsuario($user['id']);
   </div>
 </div>
 
+<!-- Bootstrap JS bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
