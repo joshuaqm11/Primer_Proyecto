@@ -1,14 +1,16 @@
+// Realizado por Joshua Quesada y Fabio Oconitrillo
 <?php
 require_once '../inc/funciones.php';
 require_once '../inc/mailer.php'; // ← usa PHPMailer vía enviarCorreo()
 
-$tipo = 'chofer';
+$tipo = 'chofer'; // Rol fijo para este formulario de registro
 $msg = '';
 $err = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     global $mysqli;
 
+    // ====== Captura de campos del formulario ======
     $nombre    = trim($_POST['nombre'] ?? '');
     $apellido  = trim($_POST['apellido'] ?? '');
     $cedula    = trim($_POST['cedula'] ?? '');
@@ -29,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute();
         $stmt->store_result();
         if ($stmt->num_rows > 0) {
+            // Evita duplicidad de correos
             $err[] = "El correo ya está registrado. Intente con otro.";
         }
         $stmt->close();
@@ -36,9 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* Si hay errores, NO seguimos con creación */
     if (!$err) {
-        $password_hash = password_hash($password, PASSWORD_DEFAULT);
+        $password_hash = password_hash($password, PASSWORD_DEFAULT); // Hash seguro de contraseña
 
-        /* 3) INSERT con manejo de 1062 (carrera) */
+        /* 3) INSERT */
         $stmt = $mysqli->prepare("
             INSERT INTO usuarios
             (nombre, apellido, cedula, fecha_nacimiento, correo, telefono, password_hash, tipo, estado)
@@ -46,12 +49,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $stmt->bind_param("ssssssss", $nombre, $apellido, $cedula, $fecha_n, $correo, $telefono, $password_hash, $tipo);
 
-        $uid = null;
+        $uid = null; // Guardará el ID del nuevo usuario
         try {
             $stmt->execute();
-            $uid = $stmt->insert_id;
+            $uid = $stmt->insert_id; // ID autogenerado del usuario
         } catch (mysqli_sql_exception $e) {
             if ((int)$e->getCode() === 1062) {
+                // Colisión de clave única (correo)
                 $err[] = "El correo ya está registrado. Intente con otro.";
             } else {
                 throw $e;
@@ -62,12 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* Si el INSERT falló, no seguimos */
         if (!$err) {
-            /* 4) Subida de foto (opcional) */
+            /* 4) Subida de foto */
             if (!empty($_FILES['foto']['name']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
                 $maxBytes = 3 * 1024 * 1024; // 3 MB
                 if ($_FILES['foto']['size'] <= $maxBytes && is_uploaded_file($_FILES['foto']['tmp_name'])) {
 
-                    // Detectar extensión segura (MIME y fallback)
+                    // Detección de extensión segura
                     $ext = null;
                     if (class_exists('finfo')) {
                         $finfo = new finfo(FILEINFO_MIME_TYPE);
@@ -85,17 +89,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     if ($ext !== null) {
-                        // Ruta absoluta (con guion en ISW-613)
+                        // Ruta absoluta de almacenamiento
                         $absDir = 'C:\\ISW-613\\httpdocs\\Primer_proyecto\\uploads\\fotos_usuarios';
                         if (!is_dir($absDir)) { @mkdir($absDir, 0775, true); }
 
-                        $filename = $uid . '_' . time() . '.' . $ext;
+                        $filename = $uid . '_' . time() . '.' . $ext;      // Nombre único (userID_timestamp.ext)
                         $absPath  = $absDir . DIRECTORY_SEPARATOR . $filename;
 
                         if (move_uploaded_file($_FILES['foto']['tmp_name'], $absPath)) {
-                            // Ruta relativa para servir desde la web
+                            // Ruta relativa servible por la web
                             $relativePath = 'uploads/fotos_usuarios/' . $filename;
 
+                            // Actualiza la foto del usuario recién creado
                             $stmt = $mysqli->prepare("UPDATE usuarios SET foto = ? WHERE id = ?");
                             $stmt->bind_param("si", $relativePath, $uid);
                             $stmt->execute();
@@ -106,15 +111,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             /* 5) Token + correo de activación */
-            $token = bin2hex(random_bytes(16));
+            $token = bin2hex(random_bytes(16)); // Token aleatorio
             $stmt = $mysqli->prepare("INSERT INTO activation_tokens (usuario_id, token) VALUES (?, ?)");
             $stmt->bind_param("is", $uid, $token);
             $stmt->execute();
             $stmt->close();
 
-            $BASE_URL = base_url_public();
+            // Construcción del enlace absoluto hacia activate.php
+            $BASE_URL = base_url_public(); // Helper
             $link = $BASE_URL . "/activate.php?token=" . urlencode($token);
 
+            // Contenido del correo de activación
             $subject = "Activa tu cuenta en Rides";
             $html = '
               <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.5">
@@ -129,8 +136,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </p>
               </div>
             ';
+
+            // Envía correo usando PHPMailer
             [$okMail, $msgMail] = enviarCorreo($correo, $nombre.' '.$apellido, $subject, $html);
-            // if (!$okMail) error_log($msgMail);
+      
 
             $msg = "✅ Cuenta creada. Revise su correo para activarla.";
         }
@@ -143,17 +152,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <title>Registro de Chofer - Rides</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Bootstrap (estilos) -->
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 <div class="container py-5">
   <div class="row justify-content-center">
     <div class="col-md-6">
+      <!-- Tarjeta principal del formulario -->
       <div class="card shadow-lg border-0 rounded-4">
         <div class="card-header bg-primary text-white text-center py-3">
           <h3 class="mb-0">Registro de Chofer</h3>
         </div>
         <div class="card-body">
+          <!-- Muestra validaciones de servidor -->
           <?php if ($err): ?>
             <div class="alert alert-danger"><ul class="mb-0"><?php foreach ($err as $e) echo "<li>".htmlspecialchars($e)."</li>"; ?></ul></div>
           <?php endif; ?>
@@ -161,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="alert alert-success text-center"><?= htmlspecialchars($msg) ?></div>
           <?php endif; ?>
 
+          <!-- Formulario de registro de chofer -->
           <form method="post" enctype="multipart/form-data">
             <div class="mb-3"><label class="form-label">Nombre</label>
               <input name="nombre" type="text" class="form-control" required></div>
